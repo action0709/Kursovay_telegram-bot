@@ -7,6 +7,7 @@ import com.pengrad.telegrambot.request.SendMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import pro.sky.telegrambot.entity.NotificationTask;
 import pro.sky.telegrambot.repository.NotificationTaskRepository;
@@ -14,6 +15,8 @@ import pro.sky.telegrambot.repository.NotificationTaskRepository;
 import javax.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -44,18 +47,33 @@ public static final Pattern PATTERN=Pattern.compile("([0-9\\.\\:\\s]{16})(\\s)([
             Matcher matcher = PATTERN.matcher(text);
             if ("/start".equalsIgnoreCase(text)){
                 telegramBot.execute(new SendMessage(chatId, "Привет!"));
-            }else if (matcher.matches()){
-               String time= matcher.group(1);
-                LocalDateTime execDate = LocalDateTime
-                        .parse(time, FORMATTER);
-                NotificationTask task = new NotificationTask();
-                task.setChatId(chatId);
-                task.setText(matcher.group(3));
-                task.setExecDate(execDate);
-                repository.save(task);
+            }else if (matcher.matches()) {
+                try {
+                    String time = matcher.group(1);
+                    LocalDateTime execDate = LocalDateTime
+                            .parse(time, FORMATTER);
+                    NotificationTask task = new NotificationTask();
+                    task.setChatId(chatId);
+                    task.setText(matcher.group(3));
+                    task.setExecDate(execDate);
+                    repository.save(task);
+                    telegramBot.execute(new SendMessage
+                            (chatId, "Событие сохранено в блокнот"));
+                } catch (DateTimeParseException e) {
+                    telegramBot.execute(new SendMessage(chatId, "Неверный формат даты"));
                 }
+            }
         });
         return UpdatesListener.CONFIRMED_UPDATES_ALL;
+    }
+    @Scheduled(fixedDelay= 60_000L)
+    public void  schedule(){
+        List<NotificationTask> tasks =
+                repository.findAllByExecDate(LocalDateTime.now()
+                        .truncatedTo(ChronoUnit.MINUTES));
+tasks.forEach(t->{
+    telegramBot.execute(new SendMessage(t.getChatId(), t.getText()));
+});
     }
 
 }
